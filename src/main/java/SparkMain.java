@@ -1,51 +1,51 @@
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.VoidFunction;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class SparkMain {
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws JSONException {
+
 		SparkConf sparkConf = new SparkConf().
 				setAppName("Example Spark App").
 				setMaster("local[*]"); // Delete this line when submitting to cluster
 		JavaSparkContext sparkContext = new JavaSparkContext(sparkConf);
 		JavaRDD<String> stringJavaRDD = sparkContext.textFile("index");
-		JavaRDD<JsonObject> jsonRDD = stringJavaRDD.map(new Function<String, JsonObject>() {
+		JavaRDD<JSONObject> jsonRDD = stringJavaRDD.map(new Function<String, JSONObject>() {
 			private static final long serialVersionUID = 1L;
-			public JsonObject call(String line) throws Exception {
-				Gson gson = new Gson();
-				JsonObject json = gson.fromJson(line, JsonObject.class);
+			public JSONObject call(String line) throws Exception {
+				JSONObject json = new SerializableJson(line);
 				return json;
 			}
 		});
-		JavaRDD<String> rdd1 = sparkContext.parallelize(parse("abdel",jsonRDD.filter(e -> e.get("abdel")!=null).collect().get(0)));
-		JavaRDD<String> rdd2 = sparkContext.parallelize(parse("abdallah",jsonRDD.filter(e -> e.get("abdallah")!=null).collect().get(0)));
-		rdd1.union(rdd2).saveAsTextFile("output");
+		
+		List<Integer> fileList1 = parse("abdel",jsonRDD.filter(e -> e.has("abdel")).first());
+		List<Integer> fileList2 = parse("abdallah",jsonRDD.filter(e -> e.has("abdallah")).first());
+
+		JavaRDD<Integer> rdd1 = sparkContext.parallelize(fileList1);
+		JavaRDD<Integer> rdd2 = sparkContext.parallelize(fileList2);	
+		rdd1.union(rdd2).sortBy(f -> f, true, 1).saveAsTextFile("output");
 		sparkContext.close();
 	}
 
-	private static List<String> parse(String target, JsonObject json) {
-		List<String> files = new ArrayList<String>();
-		JsonArray arr = json.get(target).getAsJsonArray();
-		Iterator<JsonElement> i = arr.iterator();
-		while (i.hasNext()) {
-			Iterator<Entry<String, JsonElement>> inner = i.next().getAsJsonObject().entrySet().iterator();
-			while (inner.hasNext()) {
-				files.add(inner.next().getKey());
-			}
+	private static List<Integer> parse(String target, JSONObject json) throws JSONException {
+		List<Integer> files = new ArrayList<Integer>();
+		JSONObject temp = new JSONObject(json.toString());
+		JSONArray arr = temp.getJSONArray(target);
+		
+		for (int i = 0; i < arr.length(); i++) {
+			@SuppressWarnings("unchecked")
+			Iterator<String> iter = arr.getJSONObject(i).keys();
+			files.add(Integer.parseInt(iter.next()));
 		}
 		return files;
 	}
