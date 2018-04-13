@@ -14,6 +14,8 @@ import org.json.JSONObject;
 public class SparkMain {
 
 	public static void main(String[] args) throws JSONException {
+		String word1 = "aap";
+		String word2 = "aard";
 
 		SparkConf sparkConf = new SparkConf().
 				setAppName("Example Spark App").
@@ -28,15 +30,18 @@ public class SparkMain {
 			}
 		});
 		
-		List<Integer> fileList1 = parse("abdel",jsonRDD.filter(e -> e.has("abdel")).first());
-		List<Integer> fileList2 = parse("abdallah",jsonRDD.filter(e -> e.has("abdallah")).first());
+		List<Integer> fileList1 = parse(word1,jsonRDD.filter(e -> e.has(word1)).first());
+		List<Integer> fileList2 = parse(word2,jsonRDD.filter(e -> e.has(word2)).first());
 
 		JavaRDD<Integer> rdd1 = sparkContext.parallelize(fileList1);
 		JavaRDD<Integer> rdd2 = sparkContext.parallelize(fileList2);	
-		rdd1.union(rdd2).sortBy(f -> f, true, 1).saveAsTextFile("output");
+		rdd1.union(rdd2).distinct().sortBy(f -> f, true, 1).saveAsTextFile("unionoutput");
+		rdd1.intersection(rdd2).sortBy(f -> f, true, 1).saveAsTextFile("interoutput");
+		rdd1.subtract(rdd2).sortBy(f -> f, true, 1).saveAsTextFile("suboutput");
 		sparkContext.close();
 	}
 
+	// parses out the file id list
 	private static List<Integer> parse(String target, JSONObject json) throws JSONException {
 		List<Integer> files = new ArrayList<Integer>();
 		JSONObject temp = new JSONObject(json.toString());
