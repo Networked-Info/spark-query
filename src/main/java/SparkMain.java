@@ -1,3 +1,4 @@
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -11,10 +12,12 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
+
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,6 +25,7 @@ import org.json.JSONObject;
 public class SparkMain {
 
 	
+
 
 //	private static final String CSV_PATH = "/resources/docMap.csv";
 	private static final String CSV_PATH = "/docMap.csv";
@@ -49,6 +53,7 @@ public class SparkMain {
 
 		JavaRDD<String> stringJavaRDD = sparkContext.textFile(idx_dir + "/part*");
 		jsonRDD = stringJavaRDD.map(new Function<String, JSONObject>() {
+
 			private static final long serialVersionUID = 1L;
 			public JSONObject call(String line) throws Exception {
 				JSONObject json = new SerializableJson(line);
@@ -66,6 +71,7 @@ public class SparkMain {
 			if (idx < 0) {
 				return "";
 			}
+
 			String docId = a.split(",")[0];
 			int startIdx = idx - 30, endIdx = idx + 30;
 			if (startIdx <= 0) {
@@ -91,6 +97,7 @@ public class SparkMain {
 		sparkContext.parallelize(snippets).saveAsTextFile(out_dir);
 
 //		last.saveAsTextFile(out_dir);
+
 		sparkContext.close();
 	}
 	
@@ -105,6 +112,7 @@ public class SparkMain {
     private static JavaRDD<Integer> operateSUB(JavaRDD<Integer> set1, JavaRDD<Integer> set2) {
         return set1.subtract(set2).sortBy(f -> f, true, 1);
     }	
+
 
 	// parses out the file id list
 	private static List<Integer> parse(String target, JSONObject json) throws JSONException {
@@ -129,6 +137,7 @@ public class SparkMain {
 		InputStreamReader isr = new InputStreamReader(SparkMain.class.getResourceAsStream(CSV_PATH));
 		BufferedReader br = new BufferedReader(isr);
 //		BufferedReader br = new BufferedReader(new FileReader(docMap_dir));
+
 		String line = "";
 		while ((line = br.readLine()) != null) {
 			String[] info = line.split(",");
