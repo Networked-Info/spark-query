@@ -15,7 +15,6 @@ import org.apache.spark.api.java.function.VoidFunction;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
-import scala.util.parsing.json.JSONObject;
 	
 public class SparkMain {
 	
