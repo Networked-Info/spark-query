@@ -4,6 +4,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 
+@SuppressWarnings("serial")
 public class SerializableJson extends JSONObject implements Serializable {
 	String s;
 

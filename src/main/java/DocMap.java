@@ -19,5 +19,6 @@ public class DocMap {
 			map.put(docId, csvId);
 			System.out.println(docId);
 		}
+		br.close();
 	}
 }

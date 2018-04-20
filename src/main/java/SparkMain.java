@@ -1,26 +1,28 @@
 
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
-
 import org.apache.commons.lang.StringUtils;
 
 import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
-
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import scala.Tuple2;
 
 public class SparkMain {
 
@@ -30,8 +32,8 @@ public class SparkMain {
 //	private static final String CSV_PATH = "/resources/docMap.csv";
 	private static final String CSV_PATH = "/docMap.csv";
 	private static StringBuilder sb;
-	private static HashMap<String, JavaRDD<Integer>> rddMap;
-	private static JavaRDD<Integer> last;
+	private static HashMap<String, JavaPairRDD<String,Double[]>> rddMap;
+	private static JavaPairRDD<String,Double[]> last;
 	private static SparkConf sparkConf = new SparkConf().
 				setAppName("Example Spark App").
 				setMaster("local[*]"); // Delete this line when submitting to cluster
@@ -42,13 +44,13 @@ public class SparkMain {
 		String idx_dir = args[0];
 		String docMap_dir = args[1];
 		String wiki_dir = args[2];
-		String out_dir = args[3];
+	//	String out_dir = args[3];
 		String query = args[4];
 		query = query.replaceAll("^\"|\"$", ""); 
-		final String queryRef = args[4];
+	//	final String queryRef = args[4];
 		
 		sb = new StringBuilder(query);
-		rddMap = new HashMap<String, JavaRDD<Integer>>();	
+		rddMap = new HashMap<String, JavaPairRDD<String,Double[]>>();	
 
 
 		JavaRDD<String> stringJavaRDD = sparkContext.textFile(idx_dir + "/part*");
@@ -63,74 +65,98 @@ public class SparkMain {
 		
 		
 		recurseQuery();
-		List<String> articles = getArticles(last, docMap_dir, wiki_dir);
+	//	List<String> articles = getArticles(last, docMap_dir, wiki_dir);
 		
-		List<String> snippets = articles.stream().map(a -> {
-			String firstTerm = queryRef.split(" ")[0].replaceAll("[^A-Za-z]", "");
-			int idx = a.indexOf(" " + firstTerm + " ");
-			if (idx < 0) {
-				return "";
-			}
-
-			String docId = a.split(",")[0];
-			int startIdx = idx - 30, endIdx = idx + 30;
-			if (startIdx <= 0) {
-				startIdx = idx;
-			}
-			if (endIdx >= a.length()) {
-				endIdx = idx;
-			}
-			String snippet = "..." + a.substring(startIdx, endIdx) + "...";
-			return docId + " -> " + snippet;
-		}).collect(Collectors.toList());
+		List<String[]> content = getSnippets(last, docMap_dir, wiki_dir);
 		
-		List<String> toRemove = new ArrayList<>();
-
-		for (String s : snippets) {
-			if (s.equals("")) {
-				toRemove.add(s);
-			}
+		for (String[] res: content) {
+			System.out.println(Arrays.toString(res));
 		}
-		for (String s : toRemove) {
-			snippets.remove(s);
-		}
-		sparkContext.parallelize(snippets).saveAsTextFile(out_dir);
+		
+//		List<String> snippets = articles.stream().map(a -> {
+//			String firstTerm = queryRef.split(" ")[0].replaceAll("[^A-Za-z]", "");
+//			int idx = a.indexOf(" " + firstTerm + " ");
+//			if (idx < 0) {
+//				return "";
+//			}
+//
+//			String docId = a.split(",")[0];
+//			int startIdx = idx - 30, endIdx = idx + 30;
+//			if (startIdx <= 0) {
+//				startIdx = idx;
+//			}
+//			if (endIdx >= a.length()) {
+//				endIdx = idx;
+//			}
+//			String snippet = "..." + a.substring(startIdx, endIdx) + "...";
+//			return docId + " -> " + snippet;
+//		}).collect(Collectors.toList());
+		
+//		List<String> toRemove = new ArrayList<>();
+//
+//		for (String s : snippets) {
+//			if (s.equals("")) {
+//				toRemove.add(s);
+//			}
+//		}
+//		for (String s : toRemove) {
+//			snippets.remove(s);
+//		}
+//		sparkContext.parallelize(snippets).saveAsTextFile(out_dir);
 
 //		last.saveAsTextFile(out_dir);
 
 		sparkContext.close();
 	}
 	
-	private static JavaRDD<Integer> operateAND(JavaRDD<Integer> set1, JavaRDD<Integer> set2) {
-        return set1.intersection(set2).distinct().sortBy(f -> f, true, 1);
+	private static JavaPairRDD<String,Double[]> operateAND(JavaPairRDD<String,Double[]> set1, JavaPairRDD<String,Double[]> set2) {
+        return set1.intersection(set2).reduceByKey((Function2<Double[], Double[], Double[]>) (a, b) -> new Double[]{a[0]+b[0], Math.min(a[1], b[1])});
     }
     
-    private static JavaRDD<Integer> operateOR(JavaRDD<Integer> set1, JavaRDD<Integer> set2) {
-        return set1.union(set2).sortBy(f -> f, true, 1);
+	private static JavaPairRDD<String,Double[]> operateOR(JavaPairRDD<String,Double[]> set1, JavaPairRDD<String,Double[]> set2) {
+    	return set1.union(set2).reduceByKey((Function2<Double[], Double[], Double[]>) (a, b) -> new Double[]{a[0]+b[0], Math.min(a[1], b[1])});
     }
     
-    private static JavaRDD<Integer> operateSUB(JavaRDD<Integer> set1, JavaRDD<Integer> set2) {
-        return set1.subtract(set2).sortBy(f -> f, true, 1);
+    private static JavaPairRDD<String,Double[]> operateSUB(JavaPairRDD<String,Double[]> set1, JavaPairRDD<String,Double[]> set2) {
+        return set1.subtractByKey(set2);
     }	
+    
+    @SuppressWarnings({ "unchecked", "serial", "rawtypes" })
+	private static JavaRDD<Integer[]> rank(JavaPairRDD<String,Double[]> set) {
+    	return set.mapToPair(new PairFunction() {
+			public Tuple2<Double,Integer[]> call(Object o) {
+		    	Tuple2<String,Double[]> t = (Tuple2<String,Double[]>)o;
+		        return new Tuple2(t._2[0], new Integer[]{Integer.parseInt(t._1), t._2[1].intValue()});
+		      }
+		  }).sortByKey(false).values();
+    }
 
 
 	// parses out the file id list
-	private static List<Integer> parse(String target, JSONObject json) throws JSONException {
-		List<Integer> files = new ArrayList<Integer>();
+	private static List<Tuple2<String,Double[]>> parse(String target, JSONObject json) throws JSONException {
+		List<Tuple2<String,Double[]>> files = new ArrayList<Tuple2<String,Double[]>>();
 		JSONObject temp = new JSONObject(json.toString());
 		JSONArray arr = temp.getJSONArray(target);
+		int n = arr.length();
+		double ratio = 100.0/n;
 		
-		for (int i = 0; i < arr.length(); i++) {
+		for (int i = 0; i < n; i++) {
+			JSONObject singleDoc = arr.getJSONObject(i);
 			@SuppressWarnings("unchecked")
-			Iterator<String> iter = arr.getJSONObject(i).keys();
-			files.add(Integer.parseInt(iter.next()));
+			Iterator<String> iter = singleDoc.keys();
+			String docID = iter.next();
+			JSONArray pos = (JSONArray) singleDoc.get(docID);
+			double firstPos = Double.parseDouble(pos.getString(0));
+			double score = (n-i)*ratio;
+			files.add(new Tuple2<String,Double[]>(docID, new Double[]{score, firstPos}));
 		}
 		return files;
 	}
 	
 
-	private static List<String> getArticles(JavaRDD<Integer> result, String docMap_dir, String wiki_dir) throws IOException {
-		List<String> articles = new ArrayList<>();
+	private static List<String[]> getSnippets(JavaPairRDD<String,Double[]> rawResult, String docMap_dir, String wiki_dir) throws IOException {
+		JavaRDD<Integer[]> result = rank(rawResult);
+		List<String[]> articles = new ArrayList<>();
 		
 		// generate the document and csv map
 		NavigableMap<Integer, Integer> map = new TreeMap<Integer,Integer>();
@@ -148,24 +174,26 @@ public class SparkMain {
 		br.close();
 		
 		
-		List<List<String>> snips = result.map(new Function<Integer, List<String>>() {
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			public List<String> call(Integer docId) throws Exception {
+		@SuppressWarnings("serial")
+		List<String[]> snips = result.map(new Function<Integer[], String[]>() {
+			public String[] call(Integer[] s) throws Exception {
+			int docId = s[0];
+			int idx = s[1];
 			int csvId = map.floorEntry(docId).getValue();
 			String filename = wiki_dir + "/" + "wiki" + csvId + ".csv"; // need modify when run on cluster
-			return	sparkContext
-				.textFile(filename)
-				.filter(e -> e.split(",")[0].equals(Integer.toString(docId))).collect();
+			return	sparkContext.textFile(filename)
+				.filter(e -> e.split(",")[0].equals(Integer.toString(docId)))
+				.map(e -> {
+					String[] row = e.split(",");
+					int startIdx = Math.max(idx - 30, 0);
+					int endIdx = Math.min(idx + 30, row[3].length());
+					return new String[]{row[1],row[2],row[3].substring(startIdx, endIdx)};
+				}).first();
 			}
 		}).collect();
-		
-		for (List<String> l : snips) {
-			for (String s : l) {
-				articles.add(s);
-			}
-		}
+			
+		for (String[] l : snips) 
+			articles.add(l);
 		
 		return articles;
 	}
@@ -178,43 +206,44 @@ public class SparkMain {
 				last = rddMap.get(sb.toString());
 				return;
 			}
-			List<Integer> fileList = parse(term,jsonRDD.filter(e -> e.has(term)).first());
-			last = sparkContext.parallelize(fileList);
+			List<Tuple2<String,Double[]>> fileList = parse(term,jsonRDD.filter(e -> e.has(term)).first());
+			last = sparkContext.parallelizePairs(fileList);
 			return;
 		}
 		if (StringUtils.countMatches(sb.toString(), "(") == 0) {
 			String[] subTerms = sb.toString().split("[ ]");
 			if (subTerms.length == 1) {
-				JavaRDD<Integer> rdd;
+				JavaPairRDD<String,Double[]> rdd;
 				String term = subTerms[0];
 				if (rddMap.get(term) != null) {
 					rdd = rddMap.get(term);
 				} else {
-					List<Integer> fileList = parse(term, jsonRDD.filter(e -> e.has(term)).first());
-					rdd = sparkContext.parallelize(fileList);
+					List<Tuple2<String,Double[]>> fileList = parse(term, jsonRDD.filter(e -> e.has(term)).first());
+					rdd = sparkContext.parallelizePairs(fileList);
 				}
 				last = rdd;
 				return;
 			}
 			String term1 = subTerms[0], op = subTerms[1], term2 = subTerms[2];
-			JavaRDD<Integer> rdd1, rdd2;
+			JavaPairRDD<String,Double[]> rdd1, rdd2;
 
 			if (rddMap.get(term1) != null) {
 				rdd1 = rddMap.get(term1);
 			} else {
-				List<Integer> fileList = parse(term1, jsonRDD.filter(e -> e.has(term1)).first());
-				rdd1 = sparkContext.parallelize(fileList);
+				List<Tuple2<String,Double[]>> fileList = parse(term1, jsonRDD.filter(e -> e.has(term1)).first());
+				rdd1 = sparkContext.parallelizePairs(fileList);
 			}
 			if (rddMap.get(term2) != null) {
 				rdd2 = rddMap.get(term2);
 			} else {
-				List<Integer> fileList = parse(term2, jsonRDD.filter(e -> e.has(term2)).first());
-				rdd2 = sparkContext.parallelize(fileList);
+				List<Tuple2<String,Double[]>> fileList = parse(term2, jsonRDD.filter(e -> e.has(term2)).first());
+				rdd2 = sparkContext.parallelizePairs(fileList);
 			}
 			
 			switch (op) {
 				case "and": last = operateAND(rdd1, rdd2); break;
 				case "or": last = operateOR(rdd1, rdd2); break;
+				case "not": last = operateSUB(rdd1, rdd2); break;
 			}
 			return;
 		}
@@ -230,31 +259,31 @@ public class SparkMain {
 		String clause = sb.substring(openIdx + 1, closeIdx);
 		String[] subTerms = clause.split("[ ]");
 		if (subTerms.length == 1) {
-			JavaRDD<Integer> rdd;
+			JavaPairRDD<String,Double[]> rdd;
 			String term = subTerms[0];
 			if (rddMap.get(term) != null) {
 				rdd = rddMap.get(term);
 			} else {
-				List<Integer> fileList = parse(term, jsonRDD.filter(e -> e.has(term)).first());
-				rdd = sparkContext.parallelize(fileList);
+				List<Tuple2<String,Double[]>> fileList = parse(term, jsonRDD.filter(e -> e.has(term)).first());
+				rdd = sparkContext.parallelizePairs(fileList);
 			}
 			rddMap.put(term, rdd);
 			sb.delete(openIdx, closeIdx + 1);
 			sb.insert(openIdx, term);
 		} else {
-			JavaRDD<Integer> rdd1, rdd2, mergedRDD;
+			JavaPairRDD<String,Double[]> rdd1, rdd2, mergedRDD;
 			String term1 = subTerms[0], op = subTerms[1], term2 = subTerms[2];
 			if (rddMap.get(term1) != null) {
 				rdd1 = rddMap.get(term1);
 			} else {
-				List<Integer> fileList = parse(term1, jsonRDD.filter(e -> e.has(term1)).first());
-				rdd1 = sparkContext.parallelize(fileList);
+				List<Tuple2<String,Double[]>> fileList = parse(term1, jsonRDD.filter(e -> e.has(term1)).first());
+				rdd1 = sparkContext.parallelizePairs(fileList);
 			}
 			if (rddMap.get(term2) != null) {
 				rdd2 = rddMap.get(term2);
 			} else {
-				List<Integer> fileList = parse(term2, jsonRDD.filter(e -> e.has(term2)).first());
-				rdd2 = sparkContext.parallelize(fileList);
+				List<Tuple2<String,Double[]>> fileList = parse(term2, jsonRDD.filter(e -> e.has(term2)).first());
+				rdd2 = sparkContext.parallelizePairs(fileList);
 			}
 			
 			switch (op) {
