@@ -121,7 +121,7 @@ public class SparkStack {
 			Iterator<String> iter = singleDoc.keys();
 			String docID = iter.next();
 			double score = (n-i)*ratio;
-			String pos = (String)singleDoc.get(docID);
+			String pos = ((String)singleDoc.get(docID)).trim();
 			double firstPos = Double.parseDouble(pos);
 			files.add(new Tuple2<String,Double[]>(docID, new Double[]{score, firstPos}));
 		}
